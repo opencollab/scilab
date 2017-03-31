@@ -46,7 +46,7 @@ void banner(void)
     scilabForcedWriteW(L"\n");
 
     scilabForcedWriteW(L"\n");
-    centerPrint(L"-*- This is the future version 6 of Scilab. Only for testing -*-");
+    centerPrint(L" *** Built with Visual Studio 2015 - Highly Experimental! *** ");
     scilabForcedWriteW(L"\n");
 
     scilabForcedWriteW(line);

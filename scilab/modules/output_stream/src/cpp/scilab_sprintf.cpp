@@ -1,10 +1,10 @@
 /*
- *  Scilab ( http://www.scilab.org/ ) - This file is part of Scilab
- *  Copyright (C) 2013 - Scilab Enterprises - Calixte DENIZET
- *  Copyright (C) 2013 - Scilab Enterprises - Cedric Delamarre
- *  Copyright (C) 2015 - Scilab Enterprises - Antoine ELIAS
- *
+ * Scilab ( http://www.scilab.org/ ) - This file is part of Scilab
+ * Copyright (C) 2013 - Scilab Enterprises - Calixte DENIZET
+ * Copyright (C) 2013 - Scilab Enterprises - Cedric Delamarre
+ * Copyright (C) 2015 - Scilab Enterprises - Antoine ELIAS
  * Copyright (C) 2012 - 2016 - Scilab Enterprises
+ * Copyright (C) 2017 Dirk Reusch, Kybernetik Dr. Reusch
  *
  * This file is hereby licensed under the terms of the GNU GPL v2.0,
  * pursuant to article 5.3.4 of the CeCILL v.2.1.
@@ -44,10 +44,6 @@ static void updatel(TokenDef* token);
 
 wchar_t** scilab_sprintf(const std::string& funcname, const wchar_t* _pwstInput, types::typed_list &in, int* _piOutputRows, int* _piNewLine)
 {
-    /* Force Windows display to have two-digit exponent. */
-#ifdef _MSC_VER
-    _set_output_format(_TWO_DIGIT_EXPONENT);
-#endif
     wchar_t** pwstOutput = nullptr;
     int rhs = in.size();
     wchar_t* pwstFirstOutput = nullptr;
