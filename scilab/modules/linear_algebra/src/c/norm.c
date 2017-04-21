@@ -51,6 +51,7 @@ double normString (double *A, int iRows, int iCols, char *flag)
     double ret = 0;
     double *work = NULL;
 
+    //flag cannot be both inf and fro at same time, so use mutual exclusion using if... if else
     if (strcmp(flag, "inf") == 0 || strcmp(flag, "i") == 0)
     {
         work = (double *)CALLOC(Max(1, iRows), sizeof(double));
@@ -63,7 +64,7 @@ double normString (double *A, int iRows, int iCols, char *flag)
     {
         // Call Lapack routine for computation of the Frobenius norm.
         ret = C2F(dlange)("F", &iRows, &iCols, A, &iRows, NULL);
-	}
+    }
     return ret;
 }
 
@@ -72,6 +73,7 @@ double normStringC (doublecomplex *A, int iRows, int iCols, char *flag)
     double ret = 0;
     double *work = NULL;
 
+    //flag cannot be both inf and fro at same time, so use mutual exclusion using if... if else
     if (strcmp(flag, "inf") == 0 || strcmp(flag, "i") == 0)
     {
         work = (double *)MALLOC(Max(1, iRows) * sizeof(double));
@@ -90,22 +92,23 @@ double normStringC (doublecomplex *A, int iRows, int iCols, char *flag)
 
 double normP (double *A, int iRows, int iCols, double p)
 {
-    double ret = 0, minA, scale = 0, x = 0;
+    double ret = 0, minA, scale = 0;
     double *S, *work;
     int *iwork;
     int i, maxRC, minRC, lwork, info, one = 1;
 
+    //Remove two function calls for assigning to iRows and iCols
     //Assign max of iRows and iCols to maxRC
     //Assign min of iRows and iCols to minRC
     if(iRows>iCols)
     {
-    	maxRC=iRows;
-    	minRC=iCols;
+        maxRC=iRows;
+        minRC=iCols;
     }
     else
     {
-    	maxRC=iCols;
-    	minRC=iRows;
+        maxRC=iCols;
+        minRC=iRows;
     }
     
     lwork = 3 * minRC + Max(maxRC, 7 * minRC);
@@ -124,12 +127,15 @@ double normP (double *A, int iRows, int iCols, double p)
     {
         minA = Abs(A[0]);
 
+        //predefined min reduction supported from openMP v3.1 onwards
         #pragma omp parallel for reduction(min:minA)
         for (i = 1; i < iRows; ++i)
         {
-        	double absolute_Ai=Abs(A[i]);
+            double absolute_Ai=Abs(A[i]);
             if(absolute_Ai<minA)
-            	minA = absolute_Ai;
+            {
+                minA = absolute_Ai;
+            }
         }
         return minA;
     }
@@ -148,17 +154,25 @@ double normP (double *A, int iRows, int iCols, double p)
     {
         if (iCols == 1) // In the vector case, doing a direct calculation is faster.
         {
+            //predefined max reduction supported from openMP v3.1 onwards
+            #pragma omp parallel for reduction(max:scale)
             for (i = 0; i < iRows; ++i)
             {
-                scale = Max(Abs(A[i]), scale);
+                double absolute_Ai=Abs(A[i]);
+                if(absolute_Ai>scale)
+                {
+                    scale = absolute_Ai;
+                }
             }
-            if (scale == 0.0)
+            
+            // Eliminated equality comparison of floating point values
+            if (((int)scale) == 0)
             {
                 return 0;
             }
             else
             {
-            	#pragma omp parallel for reduction(+:ret)
+                #pragma omp parallel for reduction(+:ret)
                 for (i = 0; i < iRows; ++i)
                 {
                     double temp = A[i];
@@ -184,17 +198,18 @@ double normP (double *A, int iRows, int iCols, double p)
         }
         else
         {
-	        //else block for clarity in semantics
-        	//Lapack provides it's own error messages, return
-	        FREE(S);
-	        FREE(work);
-	        FREE(iwork);
-	        return 0;
+            //else block for clarity in semantics
+            //Lapack provides it's own error messages, return
+            FREE(S);
+            FREE(work);
+            FREE(iwork);
+            return 0;
         }
     }
     // Here, A is a vector of length iRows, return sum(abs(A(i))^p))^(1/p).
     if ((int) p == p && (int) p % 2 == 0) // No need to call Abs if p is divisible by 2.
     {
+        // utilize parallelism using omp and reduce sum to variable ret
         #pragma omp parallel for reduction(+:ret)
         for (i = 0; i < iRows; ++i)
         {
@@ -224,13 +239,13 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
     //Assign min of iRows and iCols to minRC
     if(iRows>iCols)
     {
-    	maxRC=iRows;
-    	minRC=iCols;
+        maxRC=iRows;
+        minRC=iCols;
     }
     else
     {
-    	maxRC=iCols;
-    	minRC=iRows;
+        maxRC=iCols;
+        minRC=iRows;
     }
 
     lwork  = 2 * minRC + maxRC;
@@ -240,7 +255,7 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
     {
         double a = 1.0;
         double b = 1.0;
-        ret = (a - b) / (a - b);		////review
+        ret = (a - b) / (a - b);        ////review
         return ret;
     }
 
@@ -259,7 +274,7 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
             // min(minA, modulus(A[i]))
             if(modulusAi<minA)
             {
-            	minA = modulusAi;
+                minA = modulusAi;
             }
         }
         return minA;
@@ -279,11 +294,11 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
     {
         if (iCols == 1) // In the vector case, doing a direct calculation is faster.
         {
-        	#pragma omp parallel for reduction(+:ret)
+            #pragma omp parallel for reduction(+:ret)
             for (i = 0; i < iRows; ++i)
             {
-            	double real=A[i].r;
-            	double imag=A[i].i;
+                double real=A[i].r;
+                double imag=A[i].i;
                 ret += real * real + imag * imag; // Retrieving A[i] modulus^2.
             }
             return sqrt(ret);
@@ -304,22 +319,23 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
         }
         else
         {
-        	//else block for clarity in semantics
-        	//Lapack provides it's own error messages, return
-	        FREE(S);
-	        FREE(work);
-	        FREE(rwork);
-	        FREE(iwork);
-	        return 0;
-	    }
+            //else block for clarity in semantics
+            //Lapack provides it's own error messages, return
+            FREE(S);
+            FREE(work);
+            FREE(rwork);
+            FREE(iwork);
+            return 0;
+        }
     }
     // Here, A is a vector of length iRows, return sum(abs(A(i))^p))^(1/p).
+    // sum up modulus(A[i])^p into ret and return ret^(1/p)
     #pragma omp parallel for reduction(+:ret)
     for (i = 0; i < iRows; ++i)
     {
-    	double real=A[i].r;
+        double real=A[i].r;
         double imag=A[i].i;
-		// sum(modulus(A[i])^p)
+        // sum(modulus(A[i])^p), same as ((A[i].r)^2+(A[i].i)^2)^(p/2)
         ret += pow(real * real + imag * imag, p / 2);
     }
     return pow(ret, 1. / p); // sum(modulus(A[i])^p)^(1/p).
