@@ -13,6 +13,7 @@
  *
  */
 
+#include <omp.h>
 #include "norm.h"
 #include "sci_malloc.h"
 
@@ -31,7 +32,6 @@ int la_isinf(double dbl)
             return 1;
         }
     }
-
     return 0;
 }
 #endif
@@ -57,20 +57,14 @@ double normString (double *A, int iRows, int iCols, char *flag)
 
         // Call Lapack routine for computation of the infinite norm.
         ret = C2F(dlange)("I", &iRows, &iCols, A, &iRows, work);
-
         FREE(work);
-        return ret;
     }
-
-    if (strcmp(flag, "fro") == 0 || strcmp(flag, "f") == 0)
+    else if (strcmp(flag, "fro") == 0 || strcmp(flag, "f") == 0)
     {
         // Call Lapack routine for computation of the Frobenius norm.
         ret = C2F(dlange)("F", &iRows, &iCols, A, &iRows, NULL);
-
-        return ret;
-    }
-
-    return 0;
+	}
+    return ret;
 }
 
 double normStringC (doublecomplex *A, int iRows, int iCols, char *flag)
@@ -84,20 +78,14 @@ double normStringC (doublecomplex *A, int iRows, int iCols, char *flag)
 
         // Call Lapack routine for computation of the infinite norm.
         ret = C2F(zlange)("I", &iRows, &iCols, A, &iRows, work);
-
         FREE(work);
-        return ret;
     }
-
-    if (strcmp(flag, "fro") == 0 || strcmp(flag, "f") == 0)
+    else if (strcmp(flag, "fro") == 0 || strcmp(flag, "f") == 0)
     {
         // Call Lapack routine for computation of the Frobenius norm.
         ret = C2F(zlange)("F", &iRows, &iCols, A, &iRows, NULL);
-
-        return ret;
     }
-
-    return 0;
+    return ret;
 }
 
 double normP (double *A, int iRows, int iCols, double p)
@@ -107,16 +95,26 @@ double normP (double *A, int iRows, int iCols, double p)
     int *iwork;
     int i, maxRC, minRC, lwork, info, one = 1;
 
-    maxRC = Max(iRows, iCols);
-    minRC = Min(iRows, iCols);
+    //Assign max of iRows and iCols to maxRC
+    //Assign min of iRows and iCols to minRC
+    if(iRows>iCols)
+    {
+    	maxRC=iRows;
+    	minRC=iCols;
+    }
+    else
+    {
+    	maxRC=iCols;
+    	minRC=iRows;
+    }
+    
     lwork = 3 * minRC + Max(maxRC, 7 * minRC);
 
     if (ISNAN(p)) // p = %nan is a special case, return 0./0 = %nan.
     {
         double a = 1.0;
         double b = 1.0;
-        ret = (b - a) / (a - b);
-        return ret;
+        return ((b - a) / (a - b));
     }
 
     //
@@ -124,11 +122,14 @@ double normP (double *A, int iRows, int iCols, double p)
     //
     if (la_isinf(p) != 0 && p < 0) // p = -%inf is a special case, return min(abs(A)).
     {
-
         minA = Abs(A[0]);
-        for (i = 0; i < iRows; ++i)
+
+        #pragma omp parallel for reduction(min:minA)
+        for (i = 1; i < iRows; ++i)
         {
-            minA = Min(minA, Abs(A[i]));
+        	double absolute_Ai=Abs(A[i]);
+            if(absolute_Ai<minA)
+            	minA = absolute_Ai;
         }
         return minA;
     }
@@ -136,15 +137,14 @@ double normP (double *A, int iRows, int iCols, double p)
     {
         double a = 1.0;
         double b = 1.0;
-        ret = 1. / (a - b);
-        return ret;
+        return (1. / (a - b));
     }
-    if (p == 1) // Call the Lapack routine for computation of norm 1.
+    else if (p == 1) // Call the Lapack routine for computation of norm 1.
     {
-        ret = C2F(dlange)("1", &iRows, &iCols, A, &iRows, NULL);
-        return ret;
+        return C2F(dlange)("1", &iRows, &iCols, A, &iRows, NULL);
+        
     }
-    if (p == 2) // Call the Lapack routine for computation of norm 2.
+    else if (p == 2) // Call the Lapack routine for computation of norm 2.
     {
         if (iCols == 1) // In the vector case, doing a direct calculation is faster.
         {
@@ -158,12 +158,15 @@ double normP (double *A, int iRows, int iCols, double p)
             }
             else
             {
+            	#pragma omp parallel for reduction(+:ret)
                 for (i = 0; i < iRows; ++i)
                 {
-                    x = A[i] / scale;
-                    ret += x * x;
+                    double temp = A[i];
+                    ret += temp * temp;
                 }
-                return scale * sqrt(ret);
+                //take advantage of scale being loop invariant
+                double scale_square=scale*scale;
+                return scale * sqrt(ret/scale_square);
             }
         }
         // Allocating workspaces.
@@ -173,39 +176,26 @@ double normP (double *A, int iRows, int iCols, double p)
 
         // Not computing singular vectors, so arguments 7, 8, 9 and 10 are dummies.
         C2F(dgesdd)("N", &iRows, &iCols, A, &iRows, S, NULL, &one, NULL, &one, work, &lwork, iwork, &info);
-        if (info < 0)
+        if(info==0)
         {
-            // Lapack provides its own error messages. Return.
-            FREE(S);
-            FREE(work);
-            FREE(iwork);
-            return 0;
+            // successful termination.
+            // The largest singular value of A is stored in the first element of S, return it.
+            return S[0];
         }
         else
         {
-            if (info > 0)
-            {
-                // Lapack provides its own error messages. Return.
-                FREE(S);
-                FREE(work);
-                FREE(iwork);
-                return 0;
-            }
-            else
-            {
-                // info = 0: successful termination.
-                // The largest singular value of A is stored in the first element of S, return it.
-                ret = S[0];
-                FREE(S);
-                FREE(work);
-                FREE(iwork);
-                return ret;
-            }
+	        //else block for clarity in semantics
+        	//Lapack provides it's own error messages, return
+	        FREE(S);
+	        FREE(work);
+	        FREE(iwork);
+	        return 0;
         }
     }
     // Here, A is a vector of length iRows, return sum(abs(A(i))^p))^(1/p).
     if ((int) p == p && (int) p % 2 == 0) // No need to call Abs if p is divisible by 2.
     {
+        #pragma omp parallel for reduction(+:ret)
         for (i = 0; i < iRows; ++i)
         {
             ret += pow(A[i], p);
@@ -213,6 +203,7 @@ double normP (double *A, int iRows, int iCols, double p)
     }
     else
     {
+        #pragma omp parallel for reduction(+:ret)
         for (i = 0; i < iRows; ++i)
         {
             ret += pow(Abs(A[i]), p);
@@ -223,14 +214,25 @@ double normP (double *A, int iRows, int iCols, double p)
 
 double normPC (doublecomplex *A, int iRows, int iCols, double p)
 {
-    double ret = 0, sqmod, minA;
+    double ret = 0, minA;
     double *S, *rwork;
     doublecomplex *work;
     int *iwork;
     int i, maxRC, minRC, lwork, lrwork, info, one = 1;
 
-    maxRC  = Max(iRows, iCols);
-    minRC  = Min(iRows, iCols);
+    //Assign max of iRows and iCols to maxRC
+    //Assign min of iRows and iCols to minRC
+    if(iRows>iCols)
+    {
+    	maxRC=iRows;
+    	minRC=iCols;
+    }
+    else
+    {
+    	maxRC=iCols;
+    	minRC=iRows;
+    }
+
     lwork  = 2 * minRC + maxRC;
     lrwork = 5 * minRC;
 
@@ -238,40 +240,51 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
     {
         double a = 1.0;
         double b = 1.0;
-        ret = (a - b) / (a - b);
+        ret = (a - b) / (a - b);		////review
         return ret;
     }
 
     if (la_isinf(p) != 0 && p < 0) // p = -%inf is a special case, return min(abs(A)).
     {
         minA = sqrt(A[0].r * A[0].r + A[0].i * A[0].i); // Retrieving A[0] modulus.
-        for (i = 0; i < iRows; ++i)
+        
+        //predefined min reduction supported from openMP v3.1 onwards
+        #pragma omp parallel for reduction(min:minA)
+        for (i = 1; i < iRows; ++i)
         {
-            sqmod = A[i].r * A[i].r + A[i].i * A[i].i; // Retrieving A[i] modulus^2, starting at zero in case A has only one element.
-            minA = Min(minA, sqrt(sqmod)); // min(minA, modulus(A[i])).
+            double real=A[i].r;
+            double imag=A[i].i;
+            double modulusAi=sqrt(real * real + imag * imag);
+            // Starting at zero in case A has only one element.
+            // min(minA, modulus(A[i]))
+            if(modulusAi<minA)
+            {
+            	minA = modulusAi;
+            }
         }
         return minA;
     }
+    
     if (p == 0) // p = 0 is a special case, return 1./0 = %inf.
     {
         double a = 1.0;
         double b = 1.0;
-        ret = 1. / (a - b);
-        return ret;
+        return (1. / (a - b));
     }
-    if (p == 1) // Call the Lapack routine for computation of norm 1.
+    else if (p == 1) // Call the Lapack routine for computation of norm 1.
     {
-        ret = C2F(zlange)("1", &iRows, &iCols, A, &iRows, NULL);
-
-        return ret;
+        return C2F(zlange)("1", &iRows, &iCols, A, &iRows, NULL);
     }
-    if (p == 2) // Call the Lapack routine for computation of norm 2.
+    else if (p == 2) // Call the Lapack routine for computation of norm 2.
     {
         if (iCols == 1) // In the vector case, doing a direct calculation is faster.
         {
+        	#pragma omp parallel for reduction(+:ret)
             for (i = 0; i < iRows; ++i)
             {
-                ret += A[i].r * A[i].r + A[i].i * A[i].i; // Retrieving A[i] modulus^2.
+            	double real=A[i].r;
+            	double imag=A[i].i;
+                ret += real * real + imag * imag; // Retrieving A[i] modulus^2.
             }
             return sqrt(ret);
         }
@@ -283,46 +296,31 @@ double normPC (doublecomplex *A, int iRows, int iCols, double p)
 
         // Not computing singular vectors, so arguments 7, 8, 9 and 10 are dummies.
         C2F(zgesdd)("N", &iRows, &iCols, A, &iRows, S, NULL, &one, NULL, &one, work, &lwork, rwork, iwork, &info);
-        if (info < 0)
+        if (info == 0)
         {
-            // Lapack provides its own error messages. Return.
-            // Since the arguments have all been checked before, this error should not occur.
-            FREE(S);
-            FREE(work);
-            FREE(rwork);
-            FREE(iwork);
-            return 0;
+                // info = 0: successful termination.
+                // The largest singular value of A is stored in the first element of S, return it.
+                return S[0];
         }
         else
         {
-            if (info > 0)
-            {
-                // Lapack provides its own error messages. Return.
-                // Since the arguments have all been checked before, this error should not occur.
-                FREE(S);
-                FREE(work);
-                FREE(rwork);
-                FREE(iwork);
-                return 0;
-            }
-            else
-            {
-                // info = 0: successful termination.
-                // The largest singular value of A is stored in the first element of S, return it.
-                ret = S[0];
-                FREE(S);
-                FREE(work);
-                FREE(rwork);
-                FREE(iwork);
-                return ret;
-            }
-        }
+        	//else block for clarity in semantics
+        	//Lapack provides it's own error messages, return
+	        FREE(S);
+	        FREE(work);
+	        FREE(rwork);
+	        FREE(iwork);
+	        return 0;
+	    }
     }
     // Here, A is a vector of length iRows, return sum(abs(A(i))^p))^(1/p).
+    #pragma omp parallel for reduction(+:ret)
     for (i = 0; i < iRows; ++i)
     {
-        sqmod = A[i].r * A[i].r + A[i].i * A[i].i; // Retrieving A[i] modulus^2.
-        ret += pow(sqmod, p / 2); // sum(modulus(A[i])^p).
+    	double real=A[i].r;
+        double imag=A[i].i;
+		// sum(modulus(A[i])^p)
+        ret += pow(real * real + imag * imag, p / 2);
     }
     return pow(ret, 1. / p); // sum(modulus(A[i])^p)^(1/p).
 }
