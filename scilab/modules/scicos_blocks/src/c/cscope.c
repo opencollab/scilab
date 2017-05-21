@@ -1,8 +1,10 @@
 /*
  *  Scilab ( http://www.scilab.org/ ) - This file is part of Scilab
  *  Copyright (C) 2011-2012 - Scilab Enterprises - Clement DAVID
+ *  Copyright (C) 2012 - 2016 - Scilab Enterprises
  *
- * Copyright (C) 2012 - 2016 - Scilab Enterprises
+ *  Copyright (C) 2016 - Pulkit Mittal 			<mittal.pulkit08@gmail.com>
+ *  Copyright (C) 2016 - Lakshmi Prasanna Mutyala	<laxmiprasanna.mutyala@gmail.com>
  *
  * This file is hereby licensed under the terms of the GNU GPL v2.0,
  * pursuant to article 5.3.4 of the CeCILL v.2.1.
@@ -597,17 +599,64 @@ static void appendData(scicos_block * block, int input, double t, double *data)
 
     /*
      * Update data
+     *
+     * Implements Run-Time Auto scaling of graphs
+     *
      */
     if (sco != NULL)
     {
         for (i = 0; i < block->insz[input]; i++)
         {
-            const double value = data[i];
+            double value = data[i];
+            //printf("value=%lf\n",value);
             setBuffersCoordinates(block, sco->internal.bufferCoordinates[input][i], sco->internal.numberOfPoints, block->ipar[2], t, value);
+            
+            double max_curr_val,prev_max_curr_val;
+            //Get the current maximum value of the axes
+            max_curr_val = block->rpar[2];
+            prev_max_curr_val = max_curr_val;
+            
+            double min_curr_val,prev_min_curr_val;
+            //Get the current minimum value of the axes
+            min_curr_val = block->rpar[1];
+            prev_min_curr_val = min_curr_val;
+            
+            /* If the value to be plotted exceeds the current range, then we update the range. 
+             * We could update the range from current value to the new value i.e. (value + R) 
+             * where R varies from 0 to approx 150. So we have used (value + 100.0) to give the graph good feature.
+             * 
+             * However, the auto-scaling feature implemented is general and will work fine even for 
+             */
+            
+            //If the value to be plotted is greater than the current max, then update the current max            
+            if(value > max_curr_val)
+            {
+            	max_curr_val = value + 10.0;
+            	block->rpar[2] = max_curr_val;
+            }	
+            	
+            //If the value to be plotted is smaller than the current min, then update the current min	
+            if(value < min_curr_val)
+            {
+            	min_curr_val = value - 10.0;
+            	block->rpar[1] = min_curr_val;
+	    }
+            
+            //If value has changed, call the setPolylinesBounds function to update the ranges
+            if((max_curr_val != prev_max_curr_val) || (min_curr_val != prev_min_curr_val))
+            {
+            	if (setPolylinesBounds(block, input, sco->scope.periodCounter) == FALSE)
+        	{
+            		set_block_error(-5);
+            		freeScoData(block);
+            		sco = NULL;
+        	}
+            }
         }
 
         sco->internal.numberOfPoints++;
     }
+
 }
 
 static BOOL pushData(scicos_block * block, int input, int row)
