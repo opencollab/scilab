@@ -122,7 +122,7 @@ function [x,y,typ]=CMSCOPE(job,arg1,arg2)
                     yy=[ymin(:)';ymax(:)']
                     rpar=[0;period(:);yy(:)]
                     clrs=clrs(1:sum(in))
-                    ipar=[win;size(in,"*");N;wpos(:);wdim(:);in(:);clrs(:);heritance]
+                    ipar=[win;size(in,"*");N;wpos(:);wdim(:);in(:);clrs(1:sum(in));heritance]
                     //if prod(size(dstate))<>(sum(in)+1)*N+1 then
                     //dstate=-eye((sum(in)+1)*N+1,1),
                     //end
