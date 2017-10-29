@@ -42,7 +42,9 @@ OTHER RESOURCES
      [Archives](http://mailinglists.scilab.org) ,
      [Inscription](http://www.scilab.org/communities/developer_zone/tools/mailing_list)
 
- 3. Exchange files, script, data, experiences, etc can be posted on our
+ 3. [Online documentation](http://help.scilab.org/)
+
+ 4. Exchange files, script, data, experiences, etc can be posted on our
     [File Exchange](http://fileexchange.scilab.org)
 
- 4. Browse our packages available through [ATOMS](http://atoms.scilab.org)
+ 5. Browse our packages available through [ATOMS](http://atoms.scilab.org)
